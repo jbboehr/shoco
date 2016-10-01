@@ -7,6 +7,7 @@ import argparse
 import itertools
 import re
 import sys
+import struct
 
 WHITESPACE = b" \t\n\r\x0b\x0c\xc2\xad"
 PUNCTUATION = b"!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
@@ -272,6 +273,7 @@ def main():
     generation_group.add_argument("--max-successor-bits", type=int, default=4, help="The maximum amount of bits that may be used for representing a successor character. Default: 4")
     generation_group.add_argument("--encoding-types", type=int, default=3, choices=[1, 2, 3], help="The number of different encoding schemes. If your input strings are very short, consider lower values. Default: 3")
     generation_group.add_argument("--optimize-encoding", action="store_true", default=False, help="Find the optimal packing structure for the training data. This rarely leads to different results than the default values, and it is *slow*. Use it for very unusual input strings, or when you use non-default table generation arguments.")
+    generation_group.add_argument("--binary", action="store_true", default=False, help=".")
     args = parser.parse_args()
 
     log = make_log(args.output)
@@ -349,33 +351,46 @@ def main():
     log("formating table file ... ", end="")
     sys.stdout.flush()
 
-    pack_lines_formated = ",\n  ".join(
-        PACK_LINE.format(
-            word=best_encodings[i].word,
-            packed=best_encodings[i].packed,
-            unpacked=best_encodings[i].unpacked,
-            offsets=format_int_line(best_encodings[i].offsets.consecutive),
-            masks=format_int_line(best_encodings[i].masks.consecutive),
-            header_mask=best_encodings[i].header_mask,
-            header=best_encodings[i].header_code,
+    if args.binary:
+        out = struct.pack("BBBBBB", chars_count, args.encoding_types, max_encoding_len - 1, max_elements_len, min_chr, max_chr);
+        for x in successors.keys():
+            out += struct.pack("c", x)
+        for x in successors_reversed.values():
+            for y in x:
+                out += struct.pack("b", y)
+        for x in chrs_by_chr_and_successor_id:
+            for y in x:
+                out += struct.pack("c", y)
+#        for i in range(args.encoding_types):
+#            out += struct.pack("LII");
+    else:
+        pack_lines_formated = ",\n  ".join(
+            PACK_LINE.format(
+                word=best_encodings[i].word,
+                packed=best_encodings[i].packed,
+                unpacked=best_encodings[i].unpacked,
+                offsets=format_int_line(best_encodings[i].offsets.consecutive),
+                masks=format_int_line(best_encodings[i].masks.consecutive),
+                header_mask=best_encodings[i].header_mask,
+                header=best_encodings[i].header_code,
+            )
+            for i in range(args.encoding_types)
         )
-        for i in range(args.encoding_types)
-    )
-    out = TABLE_C.format(
-        chrs_count=chars_count,
-        successors_count=successors_count,
-        chrs=format_chr_line(successors.keys()),
-        chrs_reversed=format_int_line(chrs_reversed),
-        successors_reversed="},\n  {".join(format_int_line(l) for l in successors_reversed.values()),
-        chrs_by_chr_and_successor_id="},\n  {".join(format_chr_line(l) for l in chrs_by_chr_and_successor_id),
+        out = TABLE_C.format(
+            chrs_count=chars_count,
+            successors_count=successors_count,
+            chrs=format_chr_line(successors.keys()),
+            chrs_reversed=format_int_line(chrs_reversed),
+            successors_reversed="},\n  {".join(format_int_line(l) for l in successors_reversed.values()),
+            chrs_by_chr_and_successor_id="},\n  {".join(format_chr_line(l) for l in chrs_by_chr_and_successor_id),
 
-        pack_lines=pack_lines_formated,
-        max_successor_len=max_encoding_len - 1,
-        max_elements_len=MAX_CONSECUTIVES,
-        pack_count=args.encoding_types,
-        max_chr=max_chr,
-        min_chr=min_chr
-    )
+            pack_lines=pack_lines_formated,
+            max_successor_len=max_encoding_len - 1,
+            max_elements_len=MAX_CONSECUTIVES,
+            pack_count=args.encoding_types,
+            max_chr=max_chr,
+            min_chr=min_chr
+        )
     log("done.")
 
     log("writing table file ... ", end="")
